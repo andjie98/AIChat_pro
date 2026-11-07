@@ -1,0 +1,68 @@
+name: AIChat_pro
+version: 1.2.0
+main: com.laoda.aichatpro.AIChatPro
+author: laoda
+authors: [laoda]
+description: 让玩家在游戏内与 AI 文字交流，支持 @唤醒 / 随机唤醒 / 定时总结 / 服务器信息 / 用量统计。
+website: https://github.com/
+api-version: 1.12
+softdepend: [PlaceholderAPI]
+
+commands:
+  aichat:
+    description: AIChat_pro 主命令
+    usage: /aichat help
+    aliases: [aic, aichatpro, aipro, 大肥鱼]
+
+permissions:
+  aichatpro.use:
+    description: 允许在聊天中 @唤醒 AI
+    default: true
+  aichatpro.random:
+    description: 允许被"随机唤醒"命中（唤醒方式③）
+    default: false
+  aichatpro.command.ask:
+    description: 允许使用 /aichat ask 提问
+    default: true
+  aichatpro.command.summary:
+    description: 允许手动触发聊天总结
+    default: op
+  aichatpro.command.info:
+    description: 允许查看服务器实时信息
+    default: true
+  aichatpro.command.usage:
+    description: 允许查看自己的 token 用量与预估花费
+    default: true
+  aichatpro.command.usage.others:
+    description: 允许查看他人的 token 用量
+    default: op
+  aichatpro.command.status:
+    description: 查看插件运行状态 / 接口自检
+    default: op
+  aichatpro.command.limit:
+    description: 查看自己的每日额度
+    default: true
+  aichatpro.command.limit.others:
+    description: 查看他人的每日额度
+    default: op
+  aichatpro.command.reset:
+    description: 重置玩家的每日额度与用量
+    default: op
+  aichatpro.command.reload:
+    description: 重载配置文件
+    default: op
+  aichatpro.bypass.limit:
+    description: 不受每日次数限制
+    default: op
+  aichatpro.bypass.cooldown:
+    description: 不受冷却时间限制
+    default: op
+  aichatpro.notify:
+    description: 接收插件报错通知
+    default: op
+  aichatpro.limit.vip:
+    description: 每日额度档位 vip
+    default: false
+  aichatpro.limit.mvp:
+    description: 每日额度档位 mvp
+    default: false

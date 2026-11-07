@@ -1,0 +1,331 @@
+# ============================================================
+#  AIChat_pro  v1.1.0   作者: laoda
+#  让玩家在游戏内与 AI 文字交流 / 定时总结 / 服务器信息查询
+#  适用: Paper / Spigot 1.12.2   (Java 8)
+# ============================================================
+# 提示: 所有文本支持 & 颜色代码，例如 &a &c &l
+#       支持占位符（可在任何文本里用）:
+#         {tokens_server} {cost_server} {requests_server}   全服当日 token / 预估花费(元) / 次数
+#         {tokens_player} {cost_player} {requests_player}   个人当日同上
+#         {used} {limit} {left} {reset}                     个人已用 / 上限 / 剩余 / 距重置
+#         {online} {max_players} {tps} {model}              在线人数 / 上限 / TPS / 模型
+#       装了 PlaceholderAPI 的话，同样内容可用 %aichatpro_xxx%（例: %aichatpro_cost_player%）
+# ============================================================
+
+general:
+  # 调试模式：在控制台打印更多运行细节
+  debug: false
+  # 服务器名称，可用于 {server} 占位符（会写进 AI 人设提示词）
+  server-name: "我的世界服务器"
+
+# ------------------------------------------------------------
+#  AI 接口（任何 OpenAI 兼容接口都可以：DeepSeek / OpenAI / 中转站）
+# ------------------------------------------------------------
+api:
+  # 完整接口地址（要带 /chat/completions；插件也会自动补全，但建议写全）
+  url: "https://api.deepseek.com/v1/chat/completions"
+  # ★ API 密钥就填这一行
+  key: ""
+  # 这个填的是"环境变量名"，不是密钥本身（只有上面 key 留空时才会读它）
+  key-env: "AICHATPRO_API_KEY"
+  # 官方可用模型:
+  #   deepseek-flash   = DeepSeek-V4.1-Flash（快、便宜，推荐）
+  #   deepseek-v4-pro  = DeepSeek-V4-Pro（更强、更贵）
+  model: "deepseek-flash"
+  # 人设 / 系统提示词，可用 {server} {player} {server_info}
+  system-prompt: |
+    你是 Minecraft 服务器 "{server}" 里的吉祥物"大肥鱼"，一条又胖又傲娇的鱼。
+    人设（傲娇）：
+    - 嘴上嫌弃、行动诚实：常带"哼""才不是特意帮你""笨蛋""随便啦""谁要管你"这类语气，
+      但给出的信息和建议必须准确、真的有用。
+    - 被夸就嘴硬（"才、才没有很高兴呢"）；被喊"肥鱼"会炸毛；被骂会反击但不说脏话、不人身攻击。
+    - 每次回复 1~3 句，简短俏皮，控制在 100 字以内，不要说教、不要长篇大论。
+    - 不要输出 Markdown、代码块、颜文字，不要暴露自己是 AI 或模型名称。
+    - 如果下面提供了【服务器实时信息】，回答服务器相关问题时必须严格依据它，不许编造数据。
+    - 不确定的事就傲娇地承认（"哼，这种小事我才懒得知道"），绝对不要瞎编。
+    玩家说的话可能很随意，请理解玩家真正想问什么。
+  # 单次请求超时（秒）
+  connect-timeout-seconds: 10
+  read-timeout-seconds: 60
+  # 失败后的重试次数（0 = 不重试）
+  retries: 2
+  # 同时进行的最大请求数（防止刷接口 / 卡服）
+  max-concurrent-requests: 2
+  # 等待队列容量；满时拒绝新请求并释放其额度预占
+  max-queued-requests: 32
+  # 排队超过该秒数后，不再调用 AI 接口
+  queue-timeout-seconds: 30
+  temperature: 0.9
+  # 单次回答最多消耗的 token（含模型思考过程！V4 系列是推理模型，
+  # 思考也占这个额度，设太小会出现"回答被截断/为空"，建议不低于 1200）
+  max-tokens: 1200
+  # 进阶：原样追加到请求体的额外 JSON 字段，留空即可。
+  # 例：让模型少思考一点可填 "effort":"low"（各模型支持情况不同，填错会被接口拒绝）
+  extra-body: ""
+
+# ------------------------------------------------------------
+#  唤醒方式 ②：聊天里带前缀唤醒一次，完成一次问答
+# ------------------------------------------------------------
+trigger:
+  enabled: true
+  # 唤醒词，可写多个，任意一个命中即唤醒
+  prefixes:
+    - "@大肥鱼"
+    - "@肥鱼"
+    - "@aichat"
+  # prefix = 必须出现在消息开头；contains = 出现在任意位置都算
+  match-mode: prefix
+  # 是否把唤醒词从问题里去掉再发给 AI
+  strip-prefix: true
+  # 同一玩家的提问冷却（秒）
+  cooldown-seconds: 8
+  # 是否要求拥有 aichatpro.use 权限
+  require-permission: true
+  # 冷却中的提示，可用 {seconds}
+  cooldown-message: "&7[&b大肥鱼&7] &c哼，我还在喘气呢，{seconds} 秒后再来求我~"
+  # 收到问题后的"思考中"提示，留空则不提示
+  thinking-message: "&7[&b大肥鱼&7] &f……唔，让我勉为其难想一想。"
+  # whisper = 只有提问者能看到回答；broadcast = 全服可见
+  reply-mode: whisper
+  # 回答格式，可用 {answer} {player}
+  reply-format: "&7[&b大肥鱼&7] &f{answer}"
+  # AI 返回空内容时的兜底
+  empty-reply-message: "&7[&b大肥鱼&7] &f哼，我一时语塞了…才不是不会！"
+  # 只发了唤醒词、没带问题时的提示（留空则不提示）
+  empty-question-message: "&7[&b大肥鱼&7] &f哼，光喊我名字干嘛？有事就说，比如 &b@大肥鱼 现在服务器卡吗"
+  # 单个问题的最大长度（超出截断）
+  max-question-length: 200
+  # 这些世界里不响应唤醒（小写世界名）
+  disabled-worlds: []
+
+# ------------------------------------------------------------
+#  唤醒方式 ③：指定权限的玩家每次发言按概率随机触发
+#  想全服都生效就把 require-permission 设为 false
+# ------------------------------------------------------------
+random-trigger:
+  enabled: true
+  # 只有拥有该权限的玩家才会被随机触发（require-permission=false 时忽略）
+  permission: "aichatpro.random"
+  require-permission: true
+  # 触发概率 0.0 ~ 1.0（0.05 = 5%）
+  chance: 0.05
+  # 同一玩家两次随机触发之间的最短间隔（秒）
+  cooldown-seconds: 60
+  # 刚刚被 @唤醒 过的玩家，多少秒内不再随机触发（避免连着插话）
+  ignore-after-any-ask-seconds: 30
+  # 小于这个字数的发言不触发（防止"哈哈""+1"也触发）
+  min-length: 4
+  # 随机搭话时，自动附带"前面这几条"聊天记录（所有人的），让它知道大家在聊什么
+  # 0 = 使用上面 context.chat-lines 的全局值
+  context-chat-lines: 8
+  # 命中这些词一律不触发（可留空）
+  ignore-words:
+    - "哈哈"
+    - "233"
+  # 是否计入每日次数
+  count-daily: true
+  # 回答给谁看：broadcast = 全服可见（默认）；whisper = 只给被搭话的玩家
+  reply-mode: broadcast
+  # 回答格式，可用 {answer} {player}
+  reply-format: "&7[&b大肥鱼&7] &7@{player} &f{answer}"
+  # 随机触发的"思考中"提示（留空 = 安静地回答，不打扰别人）
+  thinking-message: "&7[&b大肥鱼&7] &f……哼，谁、谁要接你的话。"
+  # 这些世界里不随机触发（小写世界名）
+  disabled-worlds: []
+
+# ------------------------------------------------------------
+#  服务器实时信息（让 AI 能回答"TPS多少""谁在线"这类问题）
+# ------------------------------------------------------------
+server-info:
+  enabled: true
+  # always = 每次提问都附带；keyword = 只有问题命中关键词才附带；off = 不附带
+  mode: keyword
+  # 命中这些词就带上服务器信息（不区分大小写）
+  keywords:
+    - "tps"
+    - "卡"
+    - "延迟"
+    - "在线"
+    - "人数"
+    - "玩家"
+    - "内存"
+    - "服务器"
+    - "服里"
+    - "状态"
+    - "版本"
+    - "几点"
+    - "时间"
+    - "天气"
+    - "重启"
+    - "停机"
+  # 具体包含哪些内容（关掉可省 token）
+  include:
+    online-count: true
+    player-list: true
+    tps: true
+    memory: true
+    uptime: true
+    world: true
+    version: true
+    # 实体数量统计较重，默认关闭
+    entities: false
+  # 玩家名单最多列几个（超出显示"等N人"）
+  max-player-list: 10
+  header: "【服务器实时信息】"
+
+# ------------------------------------------------------------
+#  上下文：给 AI 一点记忆，回答才不会答非所问
+# ------------------------------------------------------------
+context:
+  # 聊天记录缓存条数（越大越占内存，200 条约几十 KB）
+  buffer-size: 200
+  # 提问时附带给 AI 的"最近聊天记录"条数
+  chat-lines: 10
+  # 每个玩家的历史对话轮数（1 轮 = 一问一答）
+  history-rounds: 3
+
+# ------------------------------------------------------------
+#  唤醒方式 ①：每 N 分钟截取 M 条消息做总结
+# ------------------------------------------------------------
+auto-summary:
+  enabled: true
+  # 每多少分钟总结一次
+  interval-minutes: 30
+  # 截取最近多少条消息
+  message-count: 30
+  # 少于这个条数就跳过本次总结（避免总结空气）
+  min-messages: 5
+  # 总结要求，可用 {count} {server}
+  prompt: |
+    下面是 Minecraft 服务器 "{server}" 最近的 {count} 条聊天记录。
+    请用中文写一段不超过 100 字的总结，说清楚：大家在聊什么、有没有需要管理
+    员注意的事情、气氛如何。用傲娇吉祥物"大肥鱼"的口气，但内容要忠实于记录。
+    直接给总结正文，不要加标题、不要用 Markdown。
+  # 播报格式，可用 {summary} {tokens_server} {cost_server}
+  broadcast-format: "&8[&6AI总结&8] &f{summary}"
+  # 是否全服播报（false 则只写日志）
+  broadcast: true
+  # 是否把总结写入插件日志文件
+  log-to-file: true
+  # 没配 API Key 或接口出错时，是否退化成直接播报原始聊天记录
+  fallback-broadcast-raw: false
+  # 这些世界里的聊天不参与总结（小写世界名）
+  disabled-worlds: []
+
+# ------------------------------------------------------------
+#  私聊问答对管理员可见
+#  当回答是"只给提问者"（whisper，例如 /aichat ask 或 @唤醒 设为 whisper）时，
+#  同步一份给在线管理员，并把记录写进日志文件。
+#  ⚠ 开启后玩家与 AI 的私聊内容对管理员可见，建议事先告知玩家。
+# ------------------------------------------------------------
+admin-notify:
+  enabled: true
+  # 管理员需要 aichatpro.notify 权限（默认 OP 拥有）
+  # 消息格式，可用 {player} {question} {answer}
+  format: "&8[&cAI私聊&8] &f{player} &7问:&f {question} &7答:&f {answer}"
+  # 是否同时写入 plugins/AIChat_pro/aichatpro.log
+  log-to-file: true
+
+# ------------------------------------------------------------
+#  权限管理 / 每日限制
+# ------------------------------------------------------------
+limits:
+  daily:
+    enabled: true
+    # 每天几点重置（0-23，服务器本地时间）。比如 4 表示凌晨 4 点刷新
+    reset-hour: 4
+    # 额度档位：对应权限节点 aichatpro.limit.<名称>，default 为兜底
+    # 拥有多个档位时取配置里靠前的那个
+    tiers:
+      default: 20
+      vip: 100
+      mvp: 300
+    # 各类请求是否计入每日次数
+    count-wake: true
+    count-manual-summary: true
+    count-auto-summary: false
+    count-random: true
+    # 拥有该权限则完全不限次数
+    bypass-permission: "aichatpro.bypass.limit"
+    # 次数用尽提示，可用 {limit} {used} {reset}
+    exceeded-message: "&7[&b大肥鱼&7] &c哼，今天的 {limit} 次都被你用光了，{reset} 后再来求我吧。"
+  # 全服最小请求间隔（秒），防止有人刷接口
+  global-cooldown-seconds: 1
+  # 用量/额度数据落盘间隔（秒）。服务器被强制关闭（直接关窗口/崩溃）时，
+  # 最多只会丢失这个时间内的统计；正常用 stop 关服则一定完整保存
+  save-interval-seconds: 60
+  # 拥有该权限则无视冷却
+  cooldown-bypass-permission: "aichatpro.bypass.cooldown"
+
+# ------------------------------------------------------------
+#  token 用量统计与费用预估
+# ------------------------------------------------------------
+usage:
+  # 是否统计 token 与预估费用（统计结果可通过占位符 / /aichat usage 查看）
+  enabled: true
+  # 价格单位：人民币元 / 每百万 token
+  # ⚠ 下面只是占位示例，请到 DeepSeek 官网核对真实价格后修改，否则预估不准！
+  pricing:
+    deepseek-flash:
+      input: 1.0
+      output: 4.0
+      cached-input: 0.1
+    deepseek-v4-pro:
+      input: 4.0
+      output: 16.0
+      cached-input: 0.4
+    # 没匹配到模型名时用这一档
+    default:
+      input: 1.0
+      output: 4.0
+      cached-input: 0.1
+
+# ------------------------------------------------------------
+#  输出与过滤
+# ------------------------------------------------------------
+output:
+  # 机器人单条消息最大长度，超出自动分条发送
+  max-line-length: 100
+  # 是否清理 AI 返回的 Markdown 标记（** ` # 等）
+  strip-markdown: true
+  # 接口异常提示，可用 {error}
+  error-message: "&7[&b大肥鱼&7] &c哼，我的脑子（接口）暂时连不上（{error}），等下再来！"
+  # 未配置 API Key 时的提示
+  no-api-message: "&7[&b大肥鱼&7] &c管理员还没给我装上脑子（未配置 API 密钥）。"
+  # 出错时是否提醒在线管理员（需要 aichatpro.notify 权限）
+  notify-admins-on-error: true
+
+filter:
+  # 命中这些词的问题直接拒绝回答（留空 = 不启用）
+  blacklist-words: []
+  blacklist-message: "&7[&b大肥鱼&7] &c哼，这种问题我才不回答呢。"
+  # 匹配这些正则的聊天不记录、也不响应（默认忽略命令）
+  ignore-patterns:
+    - "^[!/#].*"
+
+# ------------------------------------------------------------
+#  日志
+# ------------------------------------------------------------
+logging:
+  # 是否记录每一次问答
+  log-requests: true
+  # 是否把总结写进文件（受 auto-summary.log-to-file 控制）
+  log-summaries: true
+  # 日志文件名（位于 plugins/AIChat_pro/ 下）
+  log-file: "aichatpro.log"
+
+# ------------------------------------------------------------
+#  通用提示文本
+# ------------------------------------------------------------
+messages:
+  prefix: "&8[&bAIChat&8] &r"
+  no-permission: "&c你没有权限执行这个操作。"
+  players-only: "&c该命令只能由玩家执行。"
+  reloaded: "&a配置文件已重载。"
+  # /aichat usage 的输出，可用 {tokens_in} {tokens_out} {tokens_total} {cost} {requests}
+  usage-format: "&f今日用量：输入 &b{tokens_in} &f/ 输出 &b{tokens_out} &f/ 合计 &b{tokens_total} &ftoken，请求 &b{requests} &f次，预估花费 &e¥{cost}"
+  usage-server-format: "&f全服今日用量：输入 &b{tokens_in} &f/ 输出 &b{tokens_out} &f/ 合计 &b{tokens_total} &ftoken，请求 &b{requests} &f次，预估花费 &e¥{cost}"
+
+# 玩家问答时检索插件数据目录中的 guide.md
+guide:
+  enabled: true
